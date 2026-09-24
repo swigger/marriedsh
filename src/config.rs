@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Pair Unix machines over an authenticated reverse shell channel"
+    about = "Pair Unix machines over an authenticated channel"
 )]
 pub struct Cli {
     #[arg(long, global = true)]
