@@ -1,0 +1,30 @@
+[package]
+name = "marriedsh"
+version = "0.1.0"
+edition = "2024"
+description = "A small authenticated reverse shell channel for paired Unix machines"
+license = "MIT"
+rust-version = "1.85"
+
+[dependencies]
+anyhow = "1"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+clap = { version = "4", features = ["derive"] }
+hkdf = "0.12"
+libc = "0.2"
+opaque-ke = { version = "=4.0.1", default-features = false, features = ["ristretto255", "argon2"] }
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
+rand = "0.8"
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "process", "signal", "sync", "time"] }
+toml = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
