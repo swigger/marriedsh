@@ -95,6 +95,17 @@ struct Entry {
     executor: bool,
     task: Option<JoinHandle<()>>,
 }
+impl Entry {
+    fn deliver(&self, event: Event) -> Result<()> {
+        // A dropped session queues Finished locally. Until run() processes it,
+        // valid in-flight frames can still arrive for this now-closed receiver.
+        // Only a full live queue is a protocol/resource violation.
+        match self.events.try_send(event) {
+            Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => bail!("session control queue overflow"),
+        }
+    }
+}
 impl Drop for Entry {
     fn drop(&mut self) {
         self.credit.close();
@@ -247,7 +258,7 @@ async fn run(
                     Frame::Data { id, stream, bytes } => if let Some(e) = entries.get_mut(&id) {
                         ensure!(!bytes.is_empty() && bytes.len() <= protocol::CHUNK && ((e.executor && stream == 0) || (!e.executor && (stream == 1 || stream == 2))), "invalid session data");
                         let n = protocol::charge(bytes.len()); ensure!(n <= e.remaining, "flow-control window exceeded"); e.remaining -= n;
-                        e.events.try_send(Event::Data(stream, bytes)).map_err(|_| anyhow::anyhow!("session control queue overflow"))?;
+                        e.deliver(Event::Data(stream, bytes))?;
                     },
                     Frame::Opened { id, pty } => deliver(&entries, id, false, Event::Opened(pty))?,
                     Frame::Exit { id, code } => deliver(&entries, id, false, Event::Exit(code))?,
@@ -268,9 +279,43 @@ async fn run(
 fn deliver(entries: &HashMap<u64, Entry>, id: u64, executor: bool, event: Event) -> Result<()> {
     if let Some(e) = entries.get(&id) {
         ensure!(e.executor == executor, "invalid session direction");
-        e.events
-            .try_send(event)
-            .map_err(|_| anyhow::anyhow!("session control queue overflow"))?;
+        e.deliver(event)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn late_frames_after_session_drop_do_not_disconnect_the_link() {
+        let (net, _out) = mpsc::channel(1);
+        let (requests, mut pending) = mpsc::unbounded_channel();
+        let (s, entry) = session(2, true, &net, &requests);
+        let entries = HashMap::from([(2, entry)]);
+        // The receiver is gone, but the link has not processed Finished yet.
+        drop(s);
+        assert!(matches!(pending.try_recv(), Ok(Request::Finished(2))));
+        for event in [
+            Event::Data(0, vec![1]),
+            Event::Eof,
+            Event::Signal(libc::SIGINT),
+        ] {
+            deliver(&entries, 2, true, event).unwrap();
+        }
+        assert!(deliver(&entries, 2, false, Event::Exit(0)).is_err());
+    }
+
+    #[test]
+    fn full_live_session_queue_is_still_rejected() {
+        let (net, _out) = mpsc::channel(1);
+        let (requests, _pending) = mpsc::unbounded_channel();
+        let (_s, entry) = session(2, true, &net, &requests);
+        let entries = HashMap::from([(2, entry)]);
+        for _ in 0..80 {
+            deliver(&entries, 2, true, Event::Eof).unwrap();
+        }
+        assert!(deliver(&entries, 2, true, Event::Eof).is_err());
+    }
 }

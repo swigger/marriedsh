@@ -81,7 +81,8 @@ fn pty(rows: u16, cols: u16) -> Result<(UnixIo, OwnedFd)> {
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &mut size,
+            // libc declares winsize mutable on macOS and const on Linux.
+            &raw mut size,
         )
     } < 0
     {
