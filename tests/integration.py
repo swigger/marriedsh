@@ -143,7 +143,11 @@ psk="clark-test-password"
             success(call(bob, "console", "--", "printf", "%s|%s", "a b", "$(touch nope);*"), b"a b|$(touch nope);*")
             data = bytes(range(256)) * 4096
             success(call(bob, "console", "--", "cat", data=data), data)
-            success(call(bob, "console", "--", "head", "-c", "1", data=data), data[:1])
+            # Exercise exit with stdin still in flight, then immediately reuse
+            # the same authenticated link; do not retry across disconnections.
+            for _ in range(20):
+                success(call(bob, "console", "--", "head", "-c", "1", data=data), data[:1])
+                success(call(bob, "console", "--", "true"))
             r = call(bob, "console", "--", "sh", "-c", "printf out; printf err >&2; exit 17")
             assert (r.returncode, r.stdout, r.stderr) == (17, b"out", b"err"), r
             success(call(bob, "console", "--", "sh", "-c", "head -c 1048576 /dev/zero"), bytes(1048576))
