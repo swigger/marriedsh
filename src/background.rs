@@ -82,7 +82,7 @@ fn child_failure(notify: &mut UnixStream, error: impl std::fmt::Display) -> ! {
     let _ = writeln!(notify, "ERR {error}");
     unsafe { libc::_exit(1) }
 }
-fn close_inherited(keep: RawFd) {
+fn close_inherited(keep: RawFd, lock: Option<RawFd>) {
     // Enumerate only this process's descriptors, including descriptors above a
     // subsequently lowered RLIMIT_NOFILE. Embedded Linux without procfs falls back.
     let directory = if cfg!(target_os = "linux") {
@@ -105,7 +105,7 @@ fn close_inherited(keep: RawFd) {
         }
     };
     for fd in descriptors {
-        if fd > 2 && fd != keep {
+        if fd > 2 && fd != keep && Some(fd) != lock {
             unsafe {
                 libc::close(fd);
             }
@@ -113,7 +113,7 @@ fn close_inherited(keep: RawFd) {
     }
 }
 
-pub fn detach(socket: &Path, role: &str) -> Result<Fork> {
+pub fn detach(socket: &Path, role: &str, lock: Option<RawFd>) -> Result<Fork> {
     ensure!(
         socket.is_absolute(),
         "background socket path must be absolute"
@@ -211,7 +211,7 @@ pub fn detach(socket: &Path, role: &str) -> Result<Fork> {
     }
     drop(null);
     drop(log);
-    close_inherited(child.as_raw_fd());
+    close_inherited(child.as_raw_fd(), lock);
     // The retained notification FD remains CLOEXEC; commands cannot inherit it.
     Ok(Fork::Child(Startup {
         notify: Some(child),

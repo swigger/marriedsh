@@ -60,6 +60,9 @@ pub struct ConnectOptions {
     /// Stay attached to this terminal (for debugging or service managers).
     #[arg(short = 'f', long)]
     pub foreground: bool,
+    /// Hold this flock for the service lifetime; silently succeed if already held.
+    #[arg(long, value_name = "PATH")]
+    pub lock: Option<PathBuf>,
     #[arg(short = 'n', long)]
     pub name: Option<String>,
     #[arg(short = 'p', long, conflicts_with = "psk_file")]

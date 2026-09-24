@@ -94,6 +94,11 @@ It does not serialize the password into a new child command line or environment.
 Logs and PID files must be private regular files owned by the current user;
 symlinks are rejected. The parent receives readiness or startup errors over a
 private socketpair. Foreground mode is available for service supervisors.
+An optional `--lock` gate acquires a nonblocking flock before loading configuration
+or reading a password. Only lock contention is a silent successful skip. The file
+must be private, regular and owned by the current user; symlinks are rejected.
+The open descriptor survives daemonization but is close-on-exec for user commands.
+The file is never unlinked by the service, avoiding an inode-replacement race.
 
 Connection recovery never resubmits a command. If an acknowledgement or exit status
 is lost, the user must treat command outcome as unknown. Sessions are not persistent.

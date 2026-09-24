@@ -4,6 +4,7 @@ mod config;
 mod console;
 mod control;
 mod crypto;
+mod instance_lock;
 mod link;
 mod process;
 mod protocol;
@@ -13,6 +14,7 @@ mod unix_io;
 use anyhow::Result;
 use clap::Parser;
 use config::{Cli, Command};
+use std::os::fd::AsRawFd;
 
 fn main() -> std::process::ExitCode {
     match execute(Cli::parse()) {
@@ -25,6 +27,21 @@ fn main() -> std::process::ExitCode {
 }
 
 fn execute(cli: Cli) -> Result<i32> {
+    // Acquire before loading configuration or prompting, so repeated logins are
+    // silent even if stdin is not a terminal or the configuration has changed.
+    let _instance_lock = match &cli.command {
+        Command::Daemon { options, .. } | Command::Join { options, .. } => {
+            if let Some(path) = &options.lock {
+                match instance_lock::acquire(path)? {
+                    Some(lock) => Some(lock),
+                    None => return Ok(0),
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
     // Resolve files and read the password while still attached to the terminal.
     // No runtime or worker thread may exist when detach() forks.
     let config = if matches!(cli.command, Command::Keygen) {
@@ -42,12 +59,18 @@ fn execute(cli: Cli) -> Result<i32> {
         Command::Daemon { options, .. } | Command::Join { options, .. } => {
             let daemon = matches!(cli.command, Command::Daemon { .. });
             let mut settings = config::settings(&cli, config, options, daemon)?;
+            if let Some(lock) = &_instance_lock {
+                instance_lock::check_service_paths(lock, &settings.socket)?;
+            }
             if !options.foreground {
                 if settings.socket.is_relative() {
                     settings.socket = std::env::current_dir()?.join(&settings.socket);
                 }
-                match background::detach(&settings.socket, if daemon { "daemon" } else { "join" })?
-                {
+                match background::detach(
+                    &settings.socket,
+                    if daemon { "daemon" } else { "join" },
+                    _instance_lock.as_ref().map(AsRawFd::as_raw_fd),
+                )? {
                     background::Fork::Parent => return Ok(0),
                     background::Fork::Child(child) => startup = child,
                 }
