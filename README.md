@@ -242,3 +242,5 @@ PTY 需要可用的 `/dev/ptmx` / devpts（macOS 为系统 PTY）；不可用时
 `tests/background.py` 验证真实终端密码输入、后台启动、退出原 shell 后存活、离线重连、
 继承文件描述符关闭、启动错误回传及 PID/socket 清理。`make test` 包含这两组测试。
 测试结果与真实部署验证见 [TESTING.md](TESTING.md)。
+
+友链 https://linux.do/
