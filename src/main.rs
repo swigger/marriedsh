@@ -7,6 +7,7 @@ mod crypto;
 mod instance_lock;
 mod link;
 mod process;
+mod process_args;
 mod protocol;
 mod runtime;
 mod unix_io;
@@ -17,7 +18,11 @@ use config::{Cli, Command};
 use std::os::fd::AsRawFd;
 
 fn main() -> std::process::ExitCode {
-    match execute(Cli::parse()) {
+    let args = std::env::args_os().collect::<Vec<_>>();
+    let parsed = Cli::try_parse_from(args);
+    process_args::scrub();
+    let cli = parsed.unwrap_or_else(|error| error.exit());
+    match execute(cli) {
         Ok(code) => std::process::ExitCode::from(code as u8),
         Err(e) => {
             eprintln!("marriedsh: {e:#}");
