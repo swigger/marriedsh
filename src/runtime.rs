@@ -48,12 +48,6 @@ fn register(registry: Registry, link: link::Link, max: usize) -> Result<Registra
         ensure!(
             !peers
                 .values()
-                .any(|p| p.info.credential == link.info.credential),
-            "credential already connected (one credential per device)"
-        );
-        ensure!(
-            !peers
-                .values()
                 .any(|p| p.info.name.is_some() && p.info.name == link.info.name),
             "duplicate device name"
         );
