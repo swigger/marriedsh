@@ -1,2 +1,4 @@
 /target
+*.zip
+tmp/
 __pycache__/

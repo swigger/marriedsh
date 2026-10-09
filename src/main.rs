@@ -6,6 +6,7 @@ mod control;
 mod crypto;
 mod instance_lock;
 mod link;
+mod logging;
 mod process;
 mod process_args;
 mod protocol;
@@ -25,7 +26,7 @@ fn main() -> std::process::ExitCode {
     match execute(cli) {
         Ok(code) => std::process::ExitCode::from(code as u8),
         Err(e) => {
-            eprintln!("marriedsh: {e:#}");
+            logging::log(format_args!("{e:#}"));
             std::process::ExitCode::from(255)
         }
     }

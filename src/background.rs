@@ -164,12 +164,12 @@ pub fn detach(socket: &Path, role: &str, lock: Option<RawFd>) -> Result<Fork> {
             .strip_prefix("OK ")
             .and_then(|p| p.trim().parse::<u32>().ok())
         {
-            eprintln!(
-                "marriedsh: {role} started (PID {pid})\n  control: {}\n  log: {}\n  pid: {}",
+            crate::logging::log(format_args!(
+                "{role} started (PID {pid})\n  control: {}\n  log: {}\n  pid: {}",
                 socket.display(),
                 log_path.display(),
                 pid_path.display()
-            );
+            ));
             return Ok(Fork::Parent);
         }
         if let Some(error) = message.strip_prefix("ERR ") {

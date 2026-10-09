@@ -3,10 +3,10 @@ use crate::{
     protocol::{self, CommandSpec, Frame, MAX_SESSIONS, PeerInfo, WINDOW},
 };
 use anyhow::{Result, bail, ensure};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{Semaphore, mpsc, oneshot},
-    task::JoinHandle,
+    task::{AbortHandle, JoinHandle},
     time::{Instant, timeout},
 };
 
@@ -27,9 +27,17 @@ enum Request {
 #[derive(Clone)]
 pub struct Link {
     pub info: PeerInfo,
+    pub remote: Option<SocketAddr>,
     requests: mpsc::UnboundedSender<Request>,
+    task: AbortHandle,
 }
 impl Link {
+    pub fn same_connection(&self, other: &Self) -> bool {
+        self.requests.same_channel(&other.requests)
+    }
+    pub fn disconnect(&self) {
+        self.task.abort();
+    }
     pub async fn open(&self, spec: CommandSpec) -> Result<Session> {
         ensure!(self.info.allow_exec, "peer does not allow remote execution");
         let (tx, rx) = oneshot::channel();
@@ -126,17 +134,28 @@ impl Drop for Tasks {
 pub fn start(
     pair: SecurePair,
     info: PeerInfo,
+    remote: Option<SocketAddr>,
     client: bool,
     allow_exec: bool,
     heartbeat: u64,
     dead: u64,
 ) -> (Link, JoinHandle<Result<()>>) {
     let (requests, rx) = mpsc::unbounded_channel();
+    let task = tokio::spawn(run(
+        pair,
+        requests.clone(),
+        rx,
+        client,
+        allow_exec,
+        heartbeat,
+        dead,
+    ));
     let link = Link {
         info,
-        requests: requests.clone(),
+        remote,
+        requests,
+        task: task.abort_handle(),
     };
-    let task = tokio::spawn(run(pair, requests, rx, client, allow_exec, heartbeat, dead));
     (link, task)
 }
 fn session(

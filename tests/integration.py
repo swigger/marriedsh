@@ -7,6 +7,7 @@ import fcntl
 import os
 import pathlib
 import pty
+import re
 import select
 import signal
 import socket
@@ -23,6 +24,7 @@ class BlackholeProxy:
         self.destination = destination
         self.blackhole = threading.Event()
         self.stopping = threading.Event()
+        self.connections = []
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen()
@@ -37,19 +39,27 @@ class BlackholeProxy:
                 client, _ = self.listener.accept()
             except (socket.timeout, OSError):
                 continue
-            threading.Thread(target=self.relay, args=(client,), daemon=True).start()
+            blocked = threading.Event()
+            self.connections.append(blocked)
+            threading.Thread(target=self.relay, args=(client, blocked), daemon=True).start()
 
-    def relay(self, client):
+    def relay(self, client, blocked):
         with client:
             try:
                 with socket.create_connection(("127.0.0.1", self.destination), timeout=3) as server:
+                    client_open = True
                     while not self.stopping.is_set():
-                        ready, _, _ = select.select([client, server], [], [], 0.2)
+                        ready, _, _ = select.select([client, server] if client_open else [server], [], [], 0.2)
                         for src in ready:
                             data = src.recv(65536)
                             if not data:
+                                # Simulate a dead client's FIN/RST never reaching
+                                # the daemon: leave its upstream TCP socket open.
+                                if src is client and blocked.is_set():
+                                    client_open = False
+                                    continue
                                 return
-                            if not self.blackhole.is_set():
+                            if not self.blackhole.is_set() and not blocked.is_set():
                                 (server if src is client else client).sendall(data)
             except OSError:
                 pass
@@ -289,6 +299,51 @@ psk="clark-test-password"
                 success(call(bob, "console", "-n", "alice", "--", "true"))
             assert call(bob, "list").stdout == baseline
             print("PASS repeated session lifecycle", flush=True)
+
+            # The daemon must accept reconnects BEFORE its old connection expires,
+            # including at max_peers. Isolate this with a long server timeout.
+            for p in (a, c, daemon):
+                stop(p)
+            recovery_cfg = config("recovery", '''heartbeat_secs=1
+heartbeat_timeout_secs=120
+max_peers=1
+[[peers]]
+id="alice-key"
+name="alice"
+psk="alice-test-password"
+''')
+            daemon = start("--config", recovery_cfg, "--socket", bob, "daemon", address)
+            daemon_log = logs[-1]
+            wait_for(bob.exists)
+            recovery_proxy = BlackholeProxy(port)
+            proxies.append(recovery_proxy)
+            a = start("--config", alice_cfg, "--socket", alice, "join", f"127.0.0.1:{recovery_proxy.port}")
+            wait_for(lambda: b"alice-key" in call(bob, "list").stdout)
+            original_id = call(bob, "list").stdout.splitlines()[1].split()[0]
+            recovery_proxy.connections[0].set()
+            wait_for(lambda: "connection replaced" in daemon_log.read_text(), timeout=15)
+            assert call(bob, "list").stdout.splitlines()[1].split()[0] == original_id
+            success(call(bob, "console", "--", "printf", "same-id-reconnect"), b"same-id-reconnect")
+            print("PASS half-open same-ID reconnect at peer limit, old cleanup preserves replacement", flush=True)
+
+            # SIGKILL a client while keeping its server-side socket alive. Restart
+            # generates a new ID but must immediately reuse its authenticated identity.
+            recovery_proxy.connections[-1].set()
+            a.kill(); a.wait(timeout=5)
+            assert call(bob, "list").stdout.splitlines()[1].split()[0] == original_id
+            a = start("--config", alice_cfg, "--socket", alice, "join", address)
+            wait_for(lambda: original_id not in call(bob, "list").stdout, timeout=15)
+            restarted_id = call(bob, "list").stdout.splitlines()[1].split()[0]
+            assert restarted_id != original_id
+            success(call(bob, "console", "--", "printf", "restart-reconnect"), b"restart-reconnect")
+            replacements = [line for line in daemon_log.read_text().splitlines() if "connection replaced" in line]
+            assert len(replacements) == 2, replacements
+            for line in replacements:
+                assert re.match(r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]", line), line
+                assert "incoming [id=" in line and "previous [id=" in line, line
+                assert line.count("name=alice credential=alice-key remote=127.0.0.1:") == 2, line
+            assert original_id.decode() in replacements[-1] and restarted_id.decode() in replacements[-1]
+            print("PASS killed client restart with half-open server connection, UTC logs identify both peers", flush=True)
         except BaseException:
             for log in logs:
                 print(f"--- {log.name} ---\n{log.read_text()}", flush=True)

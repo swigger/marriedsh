@@ -316,7 +316,7 @@ mod tests {
             credential: "pair".into(),
             allow_exec: true,
         };
-        let (_link, task) = crate::link::start(pair, info, false, false, 1, 3);
+        let (_link, task) = crate::link::start(pair, info, None, false, false, 1, 3);
         let _task = crate::runtime::AbortTask::new(task);
         w.send(&Frame::Open {
             id: 1,

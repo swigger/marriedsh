@@ -60,7 +60,7 @@ pub async fn console(
         _ => bail!("invalid command response"),
     };
     if tty && !using_pty && !matches!(pty, PtyMode::Never) {
-        eprintln!("marriedsh: PTY unavailable; using pipes");
+        crate::logging::log(format_args!("PTY unavailable; using pipes"));
     }
     // Install termination handlers before changing terminal state.
     use tokio::signal::unix::{SignalKind, signal};

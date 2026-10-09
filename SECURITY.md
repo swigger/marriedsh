@@ -102,6 +102,12 @@ The file is never unlinked by the service, avoiding an inode-replacement race.
 
 Connection recovery never resubmits a command. If an acknowledgement or exit status
 is lost, the user must treat command outcome as unknown. Sessions are not persistent.
+After authentication and metadata validation, a new connection for the same credential
+replaces the previous connection, even at the peer limit. This permits recovery from
+half-open TCP connections and client restarts without waiting for heartbeat expiry.
+Device IDs and names do not authorize replacement across different credentials.
+Credential holders can replace an active connection; two continuously reconnecting
+clients sharing a credential will displace each other. Each device needs its own credential.
 The executor creates a new process session/group and terminates that group on
 controller loss, connection loss, or command completion. A deliberately detached
 process can escape group cleanup; this is not process containment or a sandbox.
