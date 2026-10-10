@@ -4,7 +4,7 @@ fn timestamp(now: SystemTime) -> String {
     let elapsed = now
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
-    let seconds = elapsed.as_secs() as libc::time_t;
+    let seconds = elapsed.as_secs() as _;
     let mut utc = unsafe { std::mem::zeroed::<libc::tm>() };
     unsafe { libc::gmtime_r(&seconds, &mut utc) };
     format!(
