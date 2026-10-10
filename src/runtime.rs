@@ -209,15 +209,10 @@ async fn serve_device(
             };
             validate(&info)?;
             ensure!(info.credential == credential, "credential binding mismatch");
-            if db.names.len() > 1 {
-                info.name = Some(
-                    db.names[&credential]
-                        .clone()
-                        .unwrap_or_else(|| credential.clone()),
-                );
-            } else if let Some(name) = &db.names[&credential] {
-                info.name = Some(name.clone());
-            }
+            info.name = info
+                .name
+                .or_else(|| db.names[&credential].clone())
+                .or_else(|| (db.names.len() > 1).then(|| credential.clone()));
             authenticated = Some(info.clone());
             ensure!(
                 info.allow_exec || settings.allow_exec,

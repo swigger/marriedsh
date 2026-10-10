@@ -98,8 +98,9 @@ marriedsh console -n clark -- uname -a
 marriedsh console --id <list中的完整ID> -- uname -a
 ```
 
-多凭据模式的名称由 Bob 的配置指定；省略 `peers.name` 则采用 `peers.id`。
-设备自报名称不能覆盖其他凭据的名称。重复 PSK、凭据 ID 和配置名称会被拒绝。
+设备名称优先使用客户端上报的名称（join 的 `-n` 或客户端配置中的 `name`）；
+客户端未提供名称时使用 Bob 配置中的 `peers.name`，多凭据模式下两者均未提供则采用 `peers.id`。
+重复 PSK、凭据 ID 和配置名称会被拒绝；最终名称与其他凭据的在线设备重名的连接也会被拒绝。
 
 ## 终端与退出
 

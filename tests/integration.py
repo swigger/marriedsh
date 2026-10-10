@@ -146,7 +146,7 @@ psk="clark-test-password"
             assert len(call(bob, "list").stdout.splitlines()) == 1
             assert wrong.poll() is None
             stop(wrong)
-            a = start("--config", alice_cfg, "--socket", alice, "join", "-n", "alice", address)
+            a = start("--config", alice_cfg, "--socket", alice, "join", address)
             wait_for(lambda: b"alice-key" in call(bob, "list").stdout)
             print("PASS authentication, wrong password, persistent join", flush=True)
 
@@ -174,22 +174,25 @@ psk="clark-test-password"
             assert b"login:-" in r.stdout, r.stdout
             print("PASS PTY, pipe mode, default login shell", flush=True)
 
-            c = start("--config", clark_cfg, "--socket", clark, "join", "-n", "alice", address)
+            c = start("--config", clark_cfg, "--socket", clark, "join", "-n", "clark-client", address)
             wait_for(lambda: b"clark-key" in call(bob, "list").stdout)
             r = call(bob, "console", "--", "true")
             assert r.returncode == 255 and b"ambiguous" in r.stderr
-            for name in ("alice", "clark"):
+            for name in ("alice", "clark-client"):
                 success(call(bob, "console", "-n", name, "--", "printf", name), name.encode())
-            # Clark's self-reported name cannot override Bob's configured alias.
-            assert b"clark" in call(bob, "list").stdout
+            # Client names take precedence; unnamed clients use Bob's configured alias.
+            peers_by_credential = {row.split()[2]: row.split()[1] for row in call(bob, "list").stdout.splitlines()[1:]}
+            assert peers_by_credential == {b"alice-key": b"alice", b"clark-key": b"clark-client"}
+            r = call(bob, "console", "-n", "clark", "--", "true")
+            assert r.returncode == 255 and b"no matching" in r.stderr
             r = call(alice, "console", "--", "true")
             assert r.returncode == 255 and b"does not allow" in r.stderr
-            r = call(alice, "console", "-n", "clark", "--", "true")
+            r = call(alice, "console", "-n", "clark-client", "--", "true")
             assert r.returncode == 255 and b"no matching" in r.stderr
             peers = call(bob, "list").stdout.splitlines()[1:]
             device_id = peers[0].split()[0].decode()
             success(call(bob, "console", "--id", device_id, "--", "printf", "by-id"), b"by-id")
-            print("PASS multiple peers, authoritative names, ambiguity, ID selection, isolation", flush=True)
+            print("PASS multiple peers, client name priority, configured fallback, ambiguity, ID selection, isolation", flush=True)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
                 results = list(pool.map(lambda i: call(bob, "console", "-n", "alice", "--", "sh", "-c", f"sleep 0.1; printf {i}"), range(5)))
